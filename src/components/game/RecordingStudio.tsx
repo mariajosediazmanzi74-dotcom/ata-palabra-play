@@ -17,7 +17,7 @@ function stamp(ts: number) {
 
 export function RecordingStudio({ game }: { game: GameApi }) {
   const rec = useRecorder();
-  const [last, setLast] = useState<(RecordedClip & { savedId?: string }) | null>(null);
+  const [last, setLast] = useState<(RecordedClip & { savedId?: string | undefined }) | null>(null);
   const [list, setList] = useState<Recording[]>([]);
   const [supported, setSupported] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -129,14 +129,14 @@ export function RecordingStudio({ game }: { game: GameApi }) {
       return;
     }
     const blob = await getBlob(r.id).catch(() => undefined);
-    if (!blob) return toast.error("No encontramos ese audio.");
+    if (!blob) { toast.error("No encontramos ese audio."); return; }
     await attachAudioToLine(game.data, game.setData, line.id, blob, r.name);
     toast.success("Audio asociado a la frase actual", { description: line.text });
   };
 
   const download = async (r: Recording) => {
     const blob = await getBlob(r.id).catch(() => undefined);
-    if (!blob) return toast.error("No encontramos ese audio.");
+    if (!blob) { toast.error("No encontramos ese audio."); return; }
     downloadBlob(blob, `${r.name.replace(/\s+/g, "-").toLowerCase()}.${extensionFor(r.mime)}`);
   };
 

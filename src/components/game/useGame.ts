@@ -91,11 +91,12 @@ export function useGame() {
       let i = from;
       while (token.current === myToken) {
         const list = playableLines(dataRef.current.conversations[ci]);
-        if (i >= list.length) break;
+        const line = list[i];
+        if (!line) break;
         setLineIndex(i);
         await wait(250);
         if (token.current !== myToken) return;
-        await sayLine(list[i], 1, myToken);
+        await sayLine(line, 1, myToken);
         if (token.current !== myToken) return;
         await wait(800);
         if (token.current !== myToken) return;

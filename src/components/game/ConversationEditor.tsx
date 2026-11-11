@@ -44,7 +44,7 @@ export function ConversationEditor({
   const patchLine = (id: string, patch: Partial<DialogueLine>) => patchConv((c) => updateLine(c, id, patch));
 
   const test = async (line: DialogueLine) => {
-    if (!line.text.trim() && !line.audioId) return toast("Escribe la frase primero.");
+    if (!line.text.trim() && !line.audioId) { toast("Escribe la frase primero."); return; }
     game.actions.halt();
     try {
       await playLine(line);
@@ -70,7 +70,7 @@ export function ConversationEditor({
     const lineId = recFor;
     const clip = await rec.stop();
     setRecFor(null);
-    if (!clip || !lineId) return toast.error("La grabación quedó vacía.");
+    if (!clip || !lineId) { toast.error("La grabación quedó vacía."); return; }
     await attachAudioToLine(data, setData, lineId, clip.blob, `Grabación ${formatMs(clip.durationMs)}`);
     toast.success("Audio grabado y asociado a la frase.");
   };
@@ -78,8 +78,8 @@ export function ConversationEditor({
   const onFile = async (file: File | undefined) => {
     const lineId = fileFor.current;
     if (!file || !lineId) return;
-    if (!isAudioFile(file)) return toast.error("Ese archivo no es de audio.");
-    if (file.size > MAX_AUDIO_BYTES) return toast.error("El archivo es muy grande (máx. 15 MB).");
+    if (!isAudioFile(file)) { toast.error("Ese archivo no es de audio."); return; }
+    if (file.size > MAX_AUDIO_BYTES) { toast.error("El archivo es muy grande (máx. 15 MB)."); return; }
     await attachAudioToLine(data, setData, lineId, file, file.name);
     toast.success("Audio insertado en la frase.");
   };
@@ -98,8 +98,8 @@ export function ConversationEditor({
   };
 
   const deleteConversation = () => {
-    if (data.conversations.length <= 1) return toast("Debe quedar al menos una conversación.");
-    if (!window.confirm(`¿Borrar “${conv.title}”?`)) return;
+    if (data.conversations.length <= 1) { toast("Debe quedar al menos una conversación."); return; }
+    if (!window.confirm(`¿Borrar “${conv?.title ?? ""}”?`)) return;
     game.actions.halt();
     setData((d) => ({ ...d, conversations: d.conversations.filter((_, i) => i !== ci) }));
     setSelected(Math.max(0, ci - 1));

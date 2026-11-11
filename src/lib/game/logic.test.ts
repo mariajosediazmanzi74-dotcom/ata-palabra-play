@@ -16,12 +16,12 @@ describe("conversation rules", () => {
     expect(oppositeSpeaker("him")).toBe("her");
     const next = insertReply(conv, "a", "r");
     expect(next.lines.map((l) => l.id)).toEqual(["a", "r", "b"]);
-    expect(next.lines[1].speaker).toBe("her");
+    expect(next.lines[1]?.speaker).toBe("her");
   });
 
   it("new lines alternate speakers", () => {
-    expect(appendLine(conv, "n").lines[2].speaker).toBe("him");
-    expect(appendLine({ ...conv, lines: [] }, "n").lines[0].speaker).toBe("him");
+    expect(appendLine(conv, "n").lines[2]?.speaker).toBe("him");
+    expect(appendLine({ ...conv, lines: [] }, "n").lines[0]?.speaker).toBe("him");
   });
 
   it("moving a line swaps it with its neighbour", () => {

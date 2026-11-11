@@ -17,8 +17,9 @@ export function createLine(speaker: Speaker, id: string = uid("line")): Dialogue
 /** Adds a reply right after `afterId`, spoken by the other character. */
 export function insertReply(conv: Conversation, afterId: string, newId?: string): Conversation {
   const idx = conv.lines.findIndex((l) => l.id === afterId);
-  if (idx === -1) return conv;
-  const reply = createLine(oppositeSpeaker(conv.lines[idx].speaker), newId);
+  const after = conv.lines[idx];
+  if (!after) return conv;
+  const reply = createLine(oppositeSpeaker(after.speaker), newId);
   const lines = [...conv.lines];
   lines.splice(idx + 1, 0, reply);
   return { ...conv, lines };
@@ -47,8 +48,12 @@ export function moveLine(conv: Conversation, id: string, dir: -1 | 1): Conversat
   const idx = conv.lines.findIndex((l) => l.id === id);
   const target = idx + dir;
   if (idx === -1 || target < 0 || target >= conv.lines.length) return conv;
+  const a = conv.lines[idx];
+  const b = conv.lines[target];
+  if (!a || !b) return conv;
   const lines = [...conv.lines];
-  [lines[idx], lines[target]] = [lines[target], lines[idx]];
+  lines[idx] = b;
+  lines[target] = a;
   return { ...conv, lines };
 }
 

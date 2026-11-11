@@ -33,7 +33,7 @@ export interface Recording {
   createdAt: number;
   mime: string;
   durationMs: number;
-  lineText?: string;
+  lineText?: string | undefined;
 }
 
 export const EXPRESSIONS: { value: Expression; label: string; emoji: string }[] = [

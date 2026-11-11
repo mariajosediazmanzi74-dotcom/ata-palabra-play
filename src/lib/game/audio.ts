@@ -70,7 +70,7 @@ function pickVoice(lang: string, speaker: Speaker): { voice: SpeechSynthesisVoic
   const isMale = (v: SpeechSynthesisVoice) => MALE.test(v.name) && !FEMALE.test(v.name);
   const wanted = pool.find(speaker === "her" ? isFemale : isMale);
   if (wanted) return { voice: wanted, matched: true };
-  return { voice: speaker === "him" ? (pool[1] ?? pool[0]) : pool[0], matched: false };
+  return { voice: (speaker === "him" ? (pool[1] ?? pool[0]) : pool[0]) ?? null, matched: false };
 }
 
 export function speak(
