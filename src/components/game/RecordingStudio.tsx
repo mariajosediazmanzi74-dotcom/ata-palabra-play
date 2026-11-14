@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Download, Ear, Link2, Mic, Play, Save, Square, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Cloud, Download, Ear, Link2, Loader2, Mic, Play, Save, Square, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { GameButton } from "./GameButton";
@@ -7,7 +7,8 @@ import { attachAudioToLine, downloadBlob, isAudioFile, MAX_AUDIO_BYTES } from ".
 import { playBlob } from "@/lib/game/audio";
 import { uid } from "@/lib/game/logic";
 import { extensionFor, formatMs, isRecordingSupported, useRecorder, type RecordedClip } from "@/lib/game/recorder";
-import { deleteBlob, getBlob, loadRecordings, putBlob, saveRecordings } from "@/lib/game/storage";
+import { supabase } from "@/integrations/supabase/client";
+import { currentUserId, deleteAudio, getAudioBlob, listRecordings, uploadAudio } from "@/lib/game/cloud";
 import type { Recording } from "@/lib/game/types";
 import type { GameApi } from "./useGame";
 
@@ -19,18 +20,54 @@ export function RecordingStudio({ game }: { game: GameApi }) {
   const rec = useRecorder();
   const [last, setLast] = useState<(RecordedClip & { savedId?: string | undefined }) | null>(null);
   const [list, setList] = useState<Recording[]>([]);
+  const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
+  const [busy, setBusy] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const refresh = useCallback(async () => {
+    try {
+      setList(await listRecordings());
+      setListState("ready");
+    } catch {
+      setListState("error");
+    }
+  }, []);
+
   useEffect(() => {
-    setList(loadRecordings());
     setSupported(isRecordingSupported());
   }, []);
 
-  const persist = (next: Recording[]) => {
-    setList(next);
-    saveRecordings(next);
+  // Load from the cloud and stay in sync with the user's other devices.
+  useEffect(() => {
+    if (!game.hydrated) return;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let alive = true;
+    void refresh();
+    void currentUserId()
+      .then((userId) => {
+        if (!alive) return;
+        channel = supabase
+          .channel(`recordings-${userId}-${Math.random().toString(36).slice(2)}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "audio_files", filter: `user_id=eq.${userId}` }, () => {
+            void refresh();
+          })
+          .subscribe();
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [game.hydrated, refresh]);
+
+  const fetchBlob = async (r: Recording) => {
+    try {
+      return await getAudioBlob(r.id);
+    } catch {
+      return undefined;
+    }
   };
 
   const startRec = async () => {
@@ -50,7 +87,7 @@ export function RecordingStudio({ game }: { game: GameApi }) {
       return;
     }
     setLast(clip);
-    toast.success("¡Grabación lista!", { description: "Escúchala y guárdala si te gusta." });
+    toast.success("¡Grabación lista!", { description: "Escúchala y guárdala en la nube si te gusta." });
   };
 
   const playClip = async (blob: Blob, id: string) => {
@@ -66,29 +103,32 @@ export function RecordingStudio({ game }: { game: GameApi }) {
   };
 
   const saveLast = async () => {
-    if (!last) return;
+    if (!last || busy) return;
     if (last.savedId) {
       toast("Esta grabación ya está guardada en “Mis grabaciones”.");
       return;
     }
     const id = uid("rec");
+    setBusy("save");
     try {
-      await putBlob(id, last.blob);
-    } catch {
-      toast.error("No se pudo guardar en este dispositivo", { description: "Usa “Descargar” para conservarla." });
-      return;
+      const saved = await uploadAudio({
+        id,
+        kind: "recording",
+        blob: last.blob,
+        name: `Mi voz ${list.length + 1}`,
+        durationMs: last.durationMs,
+        lineText: game.current?.text ?? null,
+      });
+      setList((l) => [saved, ...l.filter((x) => x.id !== saved.id)]);
+      setLast({ ...last, savedId: id });
+      toast.success("Grabación guardada en la nube", { description: "Disponible en todos tus dispositivos." });
+    } catch (err) {
+      toast.error("No se pudo guardar en la nube", {
+        description: `${err instanceof Error ? err.message : ""} Usa “Descargar” para conservarla mientras tanto.`,
+      });
+    } finally {
+      setBusy(null);
     }
-    const item: Recording = {
-      id,
-      name: `Mi voz ${list.length + 1}`,
-      createdAt: Date.now(),
-      mime: last.mime,
-      durationMs: last.durationMs,
-      lineText: game.current?.text,
-    };
-    persist([item, ...list]);
-    setLast({ ...last, savedId: id });
-    toast.success("Grabación guardada", { description: "La encuentras en “Mis grabaciones”." });
   };
 
   const onFile = async (file: File | undefined) => {
@@ -102,23 +142,30 @@ export function RecordingStudio({ game }: { game: GameApi }) {
       return;
     }
     const line = game.current;
+    setBusy("upload");
+    const t = toast.loading("Subiendo audio a la nube…");
     try {
-      const id = uid("rec");
-      await putBlob(id, file);
-      persist([
-        { id, name: file.name.replace(/\.[^.]+$/, ""), createdAt: Date.now(), mime: file.type || "audio/mpeg", durationMs: 0, lineText: line?.text },
-        ...list,
-      ]);
+      const saved = await uploadAudio({
+        id: uid("rec"),
+        kind: "recording",
+        blob: file,
+        name: file.name.replace(/\.[^.]+$/, ""),
+        lineText: line?.text ?? null,
+      });
+      setList((l) => [saved, ...l.filter((x) => x.id !== saved.id)]);
       if (line) {
         await attachAudioToLine(game.data, game.setData, line.id, file, file.name);
         toast.success("Audio insertado en la conversación", {
+          id: t,
           description: `Ahora “${line.text.slice(0, 40)}${line.text.length > 40 ? "…" : ""}” usa tu audio.`,
         });
       } else {
-        toast.success("Audio agregado a “Mis grabaciones”.");
+        toast.success("Audio guardado en “Mis grabaciones”.", { id: t });
       }
-    } catch {
-      toast.error("No se pudo guardar el audio en este dispositivo.");
+    } catch (err) {
+      toast.error("No se pudo subir el audio", { id: t, description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -128,22 +175,34 @@ export function RecordingStudio({ game }: { game: GameApi }) {
       toast("Inicia el juego para elegir una frase primero.");
       return;
     }
-    const blob = await getBlob(r.id).catch(() => undefined);
+    const blob = await fetchBlob(r);
     if (!blob) { toast.error("No encontramos ese audio."); return; }
-    await attachAudioToLine(game.data, game.setData, line.id, blob, r.name);
-    toast.success("Audio asociado a la frase actual", { description: line.text });
+    try {
+      await attachAudioToLine(game.data, game.setData, line.id, blob, r.name, r.durationMs);
+      toast.success("Audio asociado a la frase actual", { description: line.text });
+    } catch (err) {
+      toast.error("No se pudo asociar el audio", { description: err instanceof Error ? err.message : undefined });
+    }
   };
 
   const download = async (r: Recording) => {
-    const blob = await getBlob(r.id).catch(() => undefined);
+    const blob = await fetchBlob(r);
     if (!blob) { toast.error("No encontramos ese audio."); return; }
     downloadBlob(blob, `${r.name.replace(/\s+/g, "-").toLowerCase()}.${extensionFor(r.mime)}`);
   };
 
   const remove = async (r: Recording) => {
-    persist(list.filter((x) => x.id !== r.id));
-    if (last?.savedId === r.id) setLast({ ...last, savedId: undefined });
-    await deleteBlob(r.id).catch(() => undefined);
+    if (!window.confirm(`¿Borrar “${r.name}” de la nube? Se borrará en todos tus dispositivos.`)) return;
+    const prev = list;
+    setList(list.filter((x) => x.id !== r.id));
+    try {
+      await deleteAudio(r.id);
+      if (last?.savedId === r.id) setLast({ ...last, savedId: undefined });
+      toast.success("Grabación borrada.");
+    } catch (err) {
+      setList(prev);
+      toast.error("No se pudo borrar", { description: err instanceof Error ? err.message : undefined });
+    }
   };
 
   const recording = rec.state === "recording";
@@ -186,8 +245,8 @@ export function RecordingStudio({ game }: { game: GameApi }) {
         <GameButton tone="mint" icon={<Ear />} onClick={() => last && playClip(last.blob, "last")} disabled={!last || recording}>
           {playingId === "last" ? "Sonando…" : "Escuchar mi grabación"}
         </GameButton>
-        <GameButton tone="sun" icon={<Save />} onClick={saveLast} disabled={!last || recording}>
-          {last?.savedId ? "Guardada ✓" : "Guardar grabación"}
+        <GameButton tone="sun" icon={busy === "save" ? <Loader2 className="animate-spin" /> : <Save />} onClick={saveLast} disabled={!last || recording || busy === "save"}>
+          {busy === "save" ? "Guardando…" : last?.savedId ? "Guardada ✓" : "Guardar grabación"}
         </GameButton>
         <GameButton
           tone="sky"
@@ -197,8 +256,8 @@ export function RecordingStudio({ game }: { game: GameApi }) {
         >
           Descargar
         </GameButton>
-        <GameButton tone="tangerine" icon={<Upload />} onClick={() => fileRef.current?.click()}>
-          Insertar audio
+        <GameButton tone="tangerine" icon={busy === "upload" ? <Loader2 className="animate-spin" /> : <Upload />} onClick={() => fileRef.current?.click()} disabled={busy === "upload"}>
+          {busy === "upload" ? "Subiendo…" : "Insertar audio"}
         </GameButton>
         <input
           ref={fileRef}
@@ -212,8 +271,24 @@ export function RecordingStudio({ game }: { game: GameApi }) {
         />
       </div>
 
-      <h3 className="mb-2 mt-5 font-display text-lg font-bold text-foreground">Mis grabaciones</h3>
-      {list.length === 0 ? (
+      <h3 className="mb-2 mt-5 flex items-center gap-2 font-display text-lg font-bold text-foreground">
+        Mis grabaciones
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+          <Cloud className="size-3.5" /> en la nube
+        </span>
+      </h3>
+      {listState === "loading" ? (
+        <p className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Cargando tus grabaciones…
+        </p>
+      ) : listState === "error" ? (
+        <p className="rounded-2xl border-2 border-dashed border-destructive px-3 py-4 text-center text-sm text-muted-foreground">
+          No pudimos cargar tus grabaciones.{" "}
+          <button type="button" className="font-bold text-pink-deep underline" onClick={() => void refresh()}>
+            Reintentar
+          </button>
+        </p>
+      ) : list.length === 0 ? (
         <p className="rounded-2xl border-2 border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
           Aún no hay grabaciones. ¡Graba tu voz o inserta un audio!
         </p>
@@ -235,7 +310,7 @@ export function RecordingStudio({ game }: { game: GameApi }) {
                   className="chip-game tone-mint"
                   aria-label={`Reproducir ${r.name}`}
                   onClick={async () => {
-                    const b = await getBlob(r.id).catch(() => undefined);
+                    const b = await fetchBlob(r);
                     if (b) void playClip(b, r.id);
                     else toast.error("No encontramos ese audio.");
                   }}

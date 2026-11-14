@@ -6,7 +6,7 @@ import { DEFAULT_DATA } from "@/lib/game/defaults";
 import { uid } from "@/lib/game/logic";
 import { uploadLegacyAudio } from "@/lib/game/migrate";
 import { loadLegacyData } from "@/lib/game/storage";
-import { mergeGameData, normalizeGameData, referencedAudioIds } from "@/lib/game/sync";
+import { mergeGameData, referencedAudioIds } from "@/lib/game/sync";
 import type { GameData } from "@/lib/game/types";
 
 export type SyncStatus = "loading" | "saved" | "saving" | "offline" | "error";
@@ -202,6 +202,5 @@ export function useCloudSync(data: GameData, setData: Dispatch<SetStateAction<Ga
     loadError,
     retry: () => setAttempt((a) => a + 1),
     flush,
-    normalize: normalizeGameData,
   };
 }
