@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DEFAULT_DATA } from "@/lib/game/defaults";
-import { loadData, saveData } from "@/lib/game/storage";
+import { useCloudSync } from "./useCloudSync";
 import { isTtsAvailable, playLine, speak, stopAllAudio, TtsUnavailableError, warmUpVoices } from "@/lib/game/audio";
 import { nextConversationIndex, playableLines } from "@/lib/game/logic";
 import type { DialogueLine, GameData } from "@/lib/game/types";
@@ -10,7 +10,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function useGame() {
   const [data, setData] = useState<GameData>(DEFAULT_DATA);
-  const [hydrated, setHydrated] = useState(false);
+  const sync = useCloudSync(data, setData);
+  const hydrated = sync.hydrated;
   const [convIndex, setConvIndex] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
   const [started, setStarted] = useState(false);
@@ -29,16 +30,10 @@ export function useGame() {
   const warnedRef = useRef(false);
 
   useEffect(() => {
-    setData(loadData());
-    setHydrated(true);
     setTtsReady(isTtsAvailable());
     warmUpVoices();
     return () => stopAllAudio();
   }, []);
-
-  useEffect(() => {
-    if (hydrated) saveData(data);
-  }, [data, hydrated]);
 
   const conversations = data.conversations;
   const safeConv = Math.min(convIndex, Math.max(0, conversations.length - 1));
@@ -214,6 +209,7 @@ export function useGame() {
     data,
     setData,
     hydrated,
+    sync,
     conversation,
     convIndex: safeConv,
     lines,

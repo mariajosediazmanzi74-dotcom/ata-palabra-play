@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
+import { deleteAudio, uploadAudio } from "@/lib/game/cloud";
 import { uid } from "@/lib/game/logic";
-import { deleteBlob, putBlob } from "@/lib/game/storage";
 import type { GameData } from "@/lib/game/types";
 
 export const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
@@ -9,17 +9,19 @@ export function isAudioFile(file: File) {
   return file.type.startsWith("audio/") || /\.(mp3|wav|m4a|aac|ogg|oga|webm|flac|opus)$/i.test(file.name);
 }
 
-/** Saves an audio blob and links it to a dialogue line (replacing any previous one). */
+/** Uploads an audio to the cloud and links it to a dialogue line (replacing any previous one). */
 export async function attachAudioToLine(
   data: GameData,
   setData: Dispatch<SetStateAction<GameData>>,
   lineId: string,
   blob: Blob,
   name: string,
+  durationMs = 0,
 ) {
-  const old = data.conversations.flatMap((c) => c.lines).find((l) => l.id === lineId)?.audioId;
+  const line = data.conversations.flatMap((c) => c.lines).find((l) => l.id === lineId);
+  const old = line?.audioId;
   const audioId = uid("aud");
-  await putBlob(audioId, blob);
+  await uploadAudio({ id: audioId, kind: "line", blob, name, durationMs, lineId, lineText: line?.text ?? null });
   setData((d) => ({
     ...d,
     conversations: d.conversations.map((c) => ({
@@ -27,7 +29,7 @@ export async function attachAudioToLine(
       lines: c.lines.map((l) => (l.id === lineId ? { ...l, audioId, audioName: name } : l)),
     })),
   }));
-  if (old) void deleteBlob(old).catch(() => undefined);
+  if (old) void deleteAudio(old).catch(() => undefined);
 }
 
 export async function detachAudioFromLine(
@@ -42,7 +44,7 @@ export async function detachAudioFromLine(
       lines: c.lines.map((l) => (l.id === lineId ? { ...l, audioId: null, audioName: null } : l)),
     })),
   }));
-  await deleteBlob(audioId).catch(() => undefined);
+  await deleteAudio(audioId).catch(() => undefined);
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

@@ -1,4 +1,4 @@
-import { getBlob } from "./storage";
+import { getAudioBlob } from "./cloud";
 import type { DialogueLine, Speaker } from "./types";
 
 export class TtsUnavailableError extends Error {
@@ -119,7 +119,7 @@ export function speak(
 /** Plays the line's own audio when it has one, otherwise reads it with the browser voice. */
 export async function playLine(line: DialogueLine, rate = 1): Promise<"custom" | "tts"> {
   if (line.audioId) {
-    const blob = await getBlob(line.audioId).catch(() => undefined);
+    const blob = await getAudioBlob(line.audioId).catch(() => undefined);
     if (blob) {
       await playBlob(blob, rate);
       return "custom";
