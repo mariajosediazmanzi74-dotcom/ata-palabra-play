@@ -34,6 +34,9 @@ export interface Recording {
   mime: string;
   durationMs: number;
   lineText?: string | undefined;
+  sizeBytes?: number | undefined;
+  /** Location of the file in cloud storage. */
+  storagePath?: string | undefined;
 }
 
 export const EXPRESSIONS: { value: Expression; label: string; emoji: string }[] = [
