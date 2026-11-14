@@ -17,7 +17,7 @@ export async function uploadLegacyAudio(data: GameData) {
   for (const r of loadLegacyRecordings()) {
     const blob = await cacheGet(r.id);
     if (!blob) continue;
-    await uploadAudio({ id: r.id, kind: "recording", blob, name: r.name, durationMs: r.durationMs, lineText: r.lineText, createdAt: r.createdAt });
+    await uploadAudio({ id: r.id, kind: "recording", blob, name: r.name, durationMs: r.durationMs, lineText: r.lineText ?? null, createdAt: r.createdAt });
     moved++;
   }
   markLegacyMigrated();
