@@ -8,6 +8,13 @@
       "when": 1794682524717,
       "tag": "0000_cloud_game_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794682545726,
+      "tag": "0001_audio_bucket_policies",
+      "breakpoints": true
     }
   ]
 }
