@@ -3,10 +3,13 @@ import { useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   Eye,
   EyeOff,
   Info,
   Languages,
+  Loader2,
+  LogOut,
   Pause,
   PencilLine,
   Play,
@@ -16,6 +19,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 import bg from "@/assets/pinateria-bg.webp";
 import { Character, type Mood } from "@/components/game/Character";
 import { SpeechBubble } from "@/components/game/SpeechBubble";
@@ -24,9 +28,10 @@ import { AmbientConfetti, ConfettiBurst } from "@/components/game/Confetti";
 import { RecordingStudio } from "@/components/game/RecordingStudio";
 import { ConversationEditor } from "@/components/game/ConversationEditor";
 import { useGame } from "@/components/game/useGame";
+import type { SyncStatus } from "@/components/game/useCloudSync";
 import type { Speaker } from "@/lib/game/types";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/")({
   head: () => ({
     meta: [
       { title: "Piñata Talk — Juego de conversación en inglés" },
@@ -47,10 +52,39 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+const SYNC_LABEL: Record<SyncStatus, string> = {
+  loading: "Cargando tu nube…",
+  saving: "Guardando…",
+  saved: "Guardado en la nube ✓",
+  offline: "Sin conexión",
+  error: "Error al guardar",
+};
+
+const SYNC_TONE: Record<SyncStatus, string> = {
+  loading: "tone-sky",
+  saving: "tone-sun",
+  saved: "tone-mint",
+  offline: "tone-tangerine",
+  error: "tone-pink",
+};
+
+function SyncChip({ status }: { status: SyncStatus }) {
+  return (
+    <span className={cn("chip-game", SYNC_TONE[status])} role="status" aria-live="polite">
+      {status === "saving" || status === "loading" ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : status === "offline" || status === "error" ? (
+        <CloudOff className="size-4" />
+      ) : null}
+      {SYNC_LABEL[status]}
+    </span>
+  );
+}
+
 function Index() {
   const game = useGame();
   const [editorOpen, setEditorOpen] = useState(false);
-  const { data, current, started, finished, running, speakingId, lines, lineIndex } = game;
+  const { data, current, started, finished, running, speakingId, lines, lineIndex, sync } = game;
   const prev = lineIndex > 0 ? lines[lineIndex - 1] : undefined;
 
   const moodFor = (who: Speaker): Mood => {
@@ -61,6 +95,35 @@ function Index() {
   };
   const isSpeaking = (who: Speaker) => !!current && current.speaker === who && speakingId === current.id;
   const active = (who: Speaker) => !started || finished || current?.speaker === who;
+
+  if (sync.loadError) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <div className="bubble-game tone-pink max-w-md px-6 py-7 text-center">
+          <CloudOff className="mx-auto size-10 text-pink-deep" />
+          <h1 className="mt-2 font-display text-2xl font-bold text-foreground">No pudimos cargar tu nube</h1>
+          <p className="mt-2 text-sm font-semibold text-muted-foreground">{sync.loadError}</p>
+          <GameButton tone="sun" size="md" className="mt-4" icon={<RefreshCw />} onClick={sync.retry}>
+            Intentar de nuevo
+          </GameButton>
+        </div>
+      </main>
+    );
+  }
+
+  if (!game.hydrated) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <div className="bubble-game tone-sky px-6 py-7 text-center">
+          <Loader2 className="mx-auto size-10 animate-spin text-sky" />
+          <p className="mt-3 font-display text-xl font-bold text-foreground">Abriendo tu piñatería…</p>
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            Traemos tus conversaciones y audios desde la nube.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-3 py-4 md:gap-5 md:px-6 md:py-6">
@@ -74,8 +137,18 @@ function Index() {
             Escucha, practica y traduce en la piñatería 🪅
           </p>
         </div>
+        <SyncChip status={sync.status} />
         <GameButton tone="lilac" size="md" icon={<PencilLine />} onClick={() => setEditorOpen(true)}>
           Panel de conversaciones
+        </GameButton>
+        <GameButton
+          tone="plum"
+          size="icon"
+          aria-label="Cerrar sesión"
+          title="Cerrar sesión"
+          onClick={() => void supabase.auth.signOut()}
+        >
+          <LogOut />
         </GameButton>
       </header>
 
